@@ -1,0 +1,9 @@
+{
+    "id": "obsidian-anki-sync",
+    "name": "Obsidian Anki Sync",
+    "version": "1.0.0",
+    "minAppVersion": "0.15.0",
+    "description": "Sync Markdown cards with Anki via AnkiConnect",
+    "author": "Ihr Name",
+    "isDesktopOnly": false
+  }
