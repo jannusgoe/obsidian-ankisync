@@ -6,11 +6,23 @@ class AnkiSyncPlugin extends obsidian.Plugin {
     async onload() {
         console.log('Loading AnkiSyncPlugin');
 
+        await this.loadSettings();
+
         this.addCommand({
             id: 'scan-and-sync-anki-cards',
             name: 'Scan and Sync Anki Cards',
             callback: () => this.scanAndSyncCards()
         });
+
+        this.addSettingTab(new AnkiSyncSettingTab(this.app, this));
+    }
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
     }
 
     onunload() {
@@ -50,6 +62,59 @@ class AnkiSyncPlugin extends obsidian.Plugin {
         } else {
             console.log('No active file');
             new obsidian.Notice('No active file');
+        }
+    }
+
+    async enhanceCardWithAI(card) {
+        console.log('Enhancing card with AI:', card);
+        if (!this.settings.apiKey) {
+            throw new Error('OpenAI API key is not set');
+        }
+
+        const userPrompt = `
+        This is the given content of the flashcard:
+        Front: ${card.front}
+        Back: ${card.back}
+
+        Please respond only with a JSON object in the following format:
+        {
+            "front": "Enhanced front content",
+            "back": "Enhanced back content"
+        }
+        `;
+
+        try {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.settings.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: "gpt-4o",
+                    messages: [
+                        {"role": "system", "content": this.settings.aiPrompt},
+                        {"role": "user", "content": userPrompt}
+                    ],
+                    response_format: { "type": "json_object" }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI API request failed: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const enhancedContent = JSON.parse(data.choices[0].message.content);
+
+            return {
+                ...card,
+                front: enhancedContent.front,
+                back: enhancedContent.back
+            };
+        } catch (error) {
+            console.error('Error calling OpenAI API:', error);
+            throw error;
         }
     }
 
@@ -173,6 +238,81 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             tags.push(currentTag);
         });
         return tags;
+    }
+}
+
+const DEFAULT_SETTINGS = {
+    apiKey: '',
+    enableAIEnhancement: true,
+    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content by making it clearer, more concise, and more effective for learning. Use markdown and always answer in the given language.",
+    defaultDeck: "Default",
+    defaultTags: ""
+};
+
+class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
+    constructor(app, plugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
+
+    display() {
+        let {containerEl} = this;
+        containerEl.empty();
+        containerEl.createEl('h2', {text: 'AnkiSync Settings'});
+
+        new obsidian.Setting(containerEl)
+            .setName('OpenAI API Key')
+            .setDesc('Enter your OpenAI API key')
+            .addText(text => text
+                .setPlaceholder('Enter API key')
+                .setValue(this.plugin.settings.apiKey)
+                .onChange(async (value) => {
+                    this.plugin.settings.apiKey = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Enable AI Enhancement')
+            .setDesc('Use a language model to enhance your flashcards')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableAIEnhancement)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableAIEnhancement = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Prompt')
+            .setDesc('Customize the prompt sent to the model for card enhancement')
+            .addTextArea(text => text
+                .setPlaceholder('Enter AI prompt')
+                .setValue(this.plugin.settings.aiPrompt)
+                .onChange(async (value) => {
+                    this.plugin.settings.aiPrompt = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Default Deck')
+            .setDesc('The default deck to add new cards to')
+            .addText(text => text
+                .setPlaceholder('Enter default deck name')
+                .setValue(this.plugin.settings.defaultDeck)
+                .onChange(async (value) => {
+                    this.plugin.settings.defaultDeck = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Default Tags')
+            .setDesc('Default tags for new cards (comma-separated)')
+            .addText(text => text
+                .setPlaceholder('Enter default tags')
+                .setValue(this.plugin.settings.defaultTags)
+                .onChange(async (value) => {
+                    this.plugin.settings.defaultTags = value;
+                    await this.plugin.saveSettings();
+                }));
     }
 }
 
