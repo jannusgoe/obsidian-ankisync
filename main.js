@@ -71,17 +71,9 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             throw new Error('OpenAI API key is not set');
         }
 
-        const userPrompt = `
-        This is the given content of the flashcard:
+        const userPrompt = `Enhance the following flashcard:
         Front: ${card.front}
-        Back: ${card.back}
-
-        Please respond only with a JSON object in the following format:
-        {
-            "front": "Enhanced front content",
-            "back": "Enhanced back content"
-        }
-        `;
+        Back: ${card.back}`;
 
         try {
             const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -91,12 +83,27 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: "gpt-4o",
+                    model: "gpt-4o-2024-08-06",
                     messages: [
                         {"role": "system", "content": this.settings.aiPrompt},
                         {"role": "user", "content": userPrompt}
                     ],
-                    response_format: { "type": "json_object" }
+                    response_format: {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "enhanced_flashcard",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "front": { "type": "string" },
+                                    "back": { "type": "string" }
+                                },
+                                "required": ["front", "back"],
+                                "additionalProperties": false
+                            },
+                            "strict": true
+                        }
+                    }
                 })
             });
 
@@ -117,6 +124,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             throw error;
         }
     }
+
 
     getDeckNameFromFile(file) {
         return file.basename.replace(/\s+/g, '_');
