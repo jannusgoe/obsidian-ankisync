@@ -45,8 +45,19 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             let updatedCount = 0;
             for (const card of cards) {
                 try {
-                    console.log('Attempting to add/update card:', card);
-                    const result = await this.addOrUpdateNoteInAnki(card.front, card.back, deckName, card.tags);
+                    console.log('Processing card:', card);
+                    let processedCard = card;
+                    if (this.settings.enableAIEnhancement) {
+                        try {
+                            processedCard = await this.enhanceCardWithAI(card);
+                            console.log('AI-enhanced card:', processedCard);
+                        } catch (aiError) {
+                            console.error('Error enhancing card with AI:', aiError);
+                            new obsidian.Notice(`Failed to enhance card with AI. Using original content.`);
+                        }
+                    }
+                    console.log('Attempting to add/update card:', processedCard);
+                    const result = await this.addOrUpdateNoteInAnki(processedCard.front, processedCard.back, deckName, processedCard.tags);
                     console.log('Add/Update note result:', result);
                     if (result.added) {
                         addedCount++;
@@ -54,8 +65,8 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                         updatedCount++;
                     }
                 } catch (error) {
-                    console.error('Error adding/updating card:', error);
-                    new obsidian.Notice(`Failed to add/update card: ${card.front}. Error: ${error.message}`);
+                    console.error('Error processing card:', error);
+                    new obsidian.Notice(`Failed to process card: ${card.front}. Error: ${error.message}`);
                 }
             }
             new obsidian.Notice(`Sync complete. Added: ${addedCount}, Updated: ${updatedCount} in deck: ${deckName}`);
@@ -252,7 +263,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
 const DEFAULT_SETTINGS = {
     apiKey: '',
     enableAIEnhancement: true,
-    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content by making it clearer, more concise, and more effective for learning. Use markdown and always answer in the given language.",
+    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise (for example with bulletpoints), and more effective for learning but without changing the meaning. Use markdown and always answer in the given language.",
     defaultDeck: "Default",
     defaultTags: ""
 };
