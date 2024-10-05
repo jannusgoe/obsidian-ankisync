@@ -6,11 +6,23 @@ class AnkiSyncPlugin extends obsidian.Plugin {
     async onload() {
         console.log('Loading AnkiSyncPlugin');
 
+        await this.loadSettings();
+
         this.addCommand({
             id: 'scan-and-sync-anki-cards',
             name: 'Scan and Sync Anki Cards',
             callback: () => this.scanAndSyncCards()
         });
+
+        this.addSettingTab(new AnkiSyncSettingTab(this.app, this));
+    }
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
     }
 
     onunload() {
@@ -33,8 +45,19 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             let updatedCount = 0;
             for (const card of cards) {
                 try {
-                    console.log('Attempting to add/update card:', card);
-                    const result = await this.addOrUpdateNoteInAnki(card.front, card.back, deckName, card.tags);
+                    console.log('Processing card:', card);
+                    let processedCard = card;
+                    if (this.settings.enableAIEnhancement) {
+                        try {
+                            processedCard = await this.enhanceCardWithAI(card);
+                            console.log('AI-enhanced card:', processedCard);
+                        } catch (aiError) {
+                            console.error('Error enhancing card with AI:', aiError);
+                            new obsidian.Notice(`Failed to enhance card with AI. Using original content.`);
+                        }
+                    }
+                    console.log('Attempting to add/update card:', processedCard);
+                    const result = await this.addOrUpdateNoteInAnki(processedCard.front, processedCard.back, deckName, processedCard.tags);
                     console.log('Add/Update note result:', result);
                     if (result.added) {
                         addedCount++;
@@ -42,8 +65,8 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                         updatedCount++;
                     }
                 } catch (error) {
-                    console.error('Error adding/updating card:', error);
-                    new obsidian.Notice(`Failed to add/update card: ${card.front}. Error: ${error.message}`);
+                    console.error('Error processing card:', error);
+                    new obsidian.Notice(`Failed to process card: ${card.front}. Error: ${error.message}`);
                 }
             }
             new obsidian.Notice(`Sync complete. Added: ${addedCount}, Updated: ${updatedCount} in deck: ${deckName}`);
@@ -52,6 +75,67 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             new obsidian.Notice('No active file');
         }
     }
+
+    async enhanceCardWithAI(card) {
+        console.log('Enhancing card with AI:', card);
+        if (!this.settings.apiKey) {
+            throw new Error('OpenAI API key is not set');
+        }
+
+        const userPrompt = `Enhance the following flashcard:
+        Front: ${card.front}
+        Back: ${card.back}`;
+
+        try {
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.settings.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: "gpt-4o-2024-08-06",
+                    messages: [
+                        {"role": "system", "content": this.settings.aiPrompt},
+                        {"role": "user", "content": userPrompt}
+                    ],
+                    response_format: {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "enhanced_flashcard",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "front": { "type": "string" },
+                                    "back": { "type": "string" }
+                                },
+                                "required": ["front", "back"],
+                                "additionalProperties": false
+                            },
+                            "strict": true
+                        }
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI API request failed: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const enhancedContent = JSON.parse(data.choices[0].message.content);
+
+            return {
+                ...card,
+                front: enhancedContent.front,
+                back: enhancedContent.back
+            };
+        } catch (error) {
+            console.error('Error calling OpenAI API:', error);
+            throw error;
+        }
+    }
+
 
     getDeckNameFromFile(file) {
         return file.basename.replace(/\s+/g, '_');
@@ -173,6 +257,81 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             tags.push(currentTag);
         });
         return tags;
+    }
+}
+
+const DEFAULT_SETTINGS = {
+    apiKey: '',
+    enableAIEnhancement: true,
+    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise (for example with bulletpoints), and more effective for learning but without changing the meaning. Use markdown and always answer in the given language.",
+    defaultDeck: "Default",
+    defaultTags: ""
+};
+
+class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
+    constructor(app, plugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
+
+    display() {
+        let {containerEl} = this;
+        containerEl.empty();
+        containerEl.createEl('h2', {text: 'AnkiSync Settings'});
+
+        new obsidian.Setting(containerEl)
+            .setName('OpenAI API Key')
+            .setDesc('Enter your OpenAI API key')
+            .addText(text => text
+                .setPlaceholder('Enter API key')
+                .setValue(this.plugin.settings.apiKey)
+                .onChange(async (value) => {
+                    this.plugin.settings.apiKey = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Enable AI Enhancement')
+            .setDesc('Use a language model to enhance your flashcards')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableAIEnhancement)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableAIEnhancement = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Prompt')
+            .setDesc('Customize the prompt sent to the model for card enhancement')
+            .addTextArea(text => text
+                .setPlaceholder('Enter AI prompt')
+                .setValue(this.plugin.settings.aiPrompt)
+                .onChange(async (value) => {
+                    this.plugin.settings.aiPrompt = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Default Deck')
+            .setDesc('The default deck to add new cards to')
+            .addText(text => text
+                .setPlaceholder('Enter default deck name')
+                .setValue(this.plugin.settings.defaultDeck)
+                .onChange(async (value) => {
+                    this.plugin.settings.defaultDeck = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Default Tags')
+            .setDesc('Default tags for new cards (comma-separated)')
+            .addText(text => text
+                .setPlaceholder('Enter default tags')
+                .setValue(this.plugin.settings.defaultTags)
+                .onChange(async (value) => {
+                    this.plugin.settings.defaultTags = value;
+                    await this.plugin.saveSettings();
+                }));
     }
 }
 
