@@ -38,7 +38,10 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             const cards = this.parseCardsAndTagsFromContent(content);
             console.log('Found cards:', cards);
             
-            const deckName = this.getDeckNameFromFile(activeFile);
+            let deckName = this.settings.defaultDeck;
+            if (this.settings.automaticDeckAssignment) {
+                deckName = this.getDeckNameFromFile(activeFile);
+            }
             await this.ensureDeckExists(deckName);
             
             let addedCount = 0;
@@ -56,8 +59,14 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                             new obsidian.Notice(`Failed to enhance card with AI. Using original content.`);
                         }
                     }
+                    
+                    let tags = this.settings.automaticTagAssignment ? processedCard.tags : [];
+                    if (this.settings.defaultTags) {
+                        tags = tags.concat(this.settings.defaultTags.split(',').map(tag => tag.trim()));
+                    }
+                    
                     console.log('Attempting to add/update card:', processedCard);
-                    const result = await this.addOrUpdateNoteInAnki(processedCard.front, processedCard.back, deckName, processedCard.tags);
+                    const result = await this.addOrUpdateNoteInAnki(processedCard.front, processedCard.back, deckName, tags);
                     console.log('Add/Update note result:', result);
                     if (result.added) {
                         addedCount++;
@@ -204,12 +213,22 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                 method: 'POST',
                 body: JSON.stringify({ action, version: 6, params })
             });
-
+    
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+    
             const responseJson = await response.json();
             console.log('AnkiConnect raw response:', responseJson);
+    
+            if (responseJson.error) {
+                throw new Error(responseJson.error);
+            }
+    
             return responseJson;
         } catch (error) {
             console.error('Error invoking AnkiConnect:', error);
+            new obsidian.Notice(`Failed to connect to Anki: ${error.message}. Make sure Anki is running and AnkiConnect is installed`);
             throw error;
         }
     }
@@ -263,10 +282,12 @@ class AnkiSyncPlugin extends obsidian.Plugin {
 const DEFAULT_SETTINGS = {
     apiKey: '',
     enableAIEnhancement: true,
-    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise, and more effective for learning but without changing the meaning. Treat the back as a hint on how you are suppossed to enhance the back if it's not a complete answer. Use HTML for formatting (e.g., <strong>, <em>, <code>, <ul>, <li>). Always answer in the given language and ensure proper HTML formatting.",
+    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise, and more effective for learning but without changing the meaning. Treat the back as a hint on how you are suppossed to enhance the back if it's not a complete answer (e.g., If asks for specific data, provide the actual data). Use HTML for formatting (e.g., <strong>, <em>, <code>, <ul>, <li>). Always answer in the given language and ensure proper HTML formatting.",
     defaultDeck: "Default",
     defaultTags: "",
-    aiModel: "gpt-4o"
+    aiModel: "gpt-4o",
+    automaticDeckAssignment: true,
+    automaticTagAssignment: true
 };
 
 class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
@@ -325,6 +346,16 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
                 }));
 
         new obsidian.Setting(containerEl)
+            .setName('Deck Assignment')
+            .setDesc('Automatically assign decks based on file names')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.automaticDeckAssignment)
+                .onChange(async (value) => {
+                    this.plugin.settings.automaticDeckAssignment = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
             .setName('Default Deck')
             .setDesc('The default deck to add new cards to')
             .addText(text => text
@@ -332,6 +363,16 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
                 .setValue(this.plugin.settings.defaultDeck)
                 .onChange(async (value) => {
                     this.plugin.settings.defaultDeck = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('Tag Assignment')
+            .setDesc('Automatically assign tags based on headings')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.automaticTagAssignment)
+                .onChange(async (value) => {
+                    this.plugin.settings.automaticTagAssignment = value;
                     await this.plugin.saveSettings();
                 }));
 
