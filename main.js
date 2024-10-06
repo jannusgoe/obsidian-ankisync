@@ -263,7 +263,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
 const DEFAULT_SETTINGS = {
     apiKey: '',
     enableAIEnhancement: true,
-    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise (for example with bulletpoints), and more effective for learning but without changing the meaning. Use markdown and always answer in the given language.",
+    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise, and more effective for learning but without changing the meaning. Treat the back as a hint on how you are suppossed to enhance the back if it's not a complete answer. Use HTML for formatting (e.g., <strong>, <em>, <code>, <ul>, <li>). Always answer in the given language and ensure proper HTML formatting.",
     defaultDeck: "Default",
     defaultTags: "",
     aiModel: "gpt-4o"
