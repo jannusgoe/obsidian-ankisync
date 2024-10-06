@@ -94,7 +94,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: "gpt-4o-2024-08-06",
+                    model: this.settings.aiModel,
                     messages: [
                         {"role": "system", "content": this.settings.aiPrompt},
                         {"role": "user", "content": userPrompt}
@@ -225,7 +225,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                 const level = line.match(/^#+/)[0].length;
                 const text = line.replace(/^#+\s*/, '').trim().toLowerCase().replace(/\s+/g, '_');
                 headings[level] = text;
-                // Entferne alle Überschriften höherer Ebenen
+                
                 Object.keys(headings).forEach(key => {
                     if (parseInt(key) > level) {
                         delete headings[key];
@@ -265,7 +265,8 @@ const DEFAULT_SETTINGS = {
     enableAIEnhancement: true,
     aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise (for example with bulletpoints), and more effective for learning but without changing the meaning. Use markdown and always answer in the given language.",
     defaultDeck: "Default",
-    defaultTags: ""
+    defaultTags: "",
+    aiModel: "gpt-4o"
 };
 
 class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
@@ -302,12 +303,24 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
 
         new obsidian.Setting(containerEl)
             .setName('Prompt')
-            .setDesc('Customize the prompt sent to the model for card enhancement')
+            .setDesc('Customize the system prompt sent to the model for card enhancement')
             .addTextArea(text => text
                 .setPlaceholder('Enter AI prompt')
                 .setValue(this.plugin.settings.aiPrompt)
                 .onChange(async (value) => {
                     this.plugin.settings.aiPrompt = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new obsidian.Setting(containerEl)
+            .setName('AI Model')
+            .setDesc('Choose the OpenAI model used for card enhancement')
+            .addDropdown(dropdown => dropdown
+                .addOption('gpt-4o', 'GPT-4o')
+                .addOption('gpt-4o-mini', 'GPT-4o mini')
+                .setValue(this.plugin.settings.aiModel)
+                .onChange(async (value) => {
+                    this.plugin.settings.aiModel = value;
                     await this.plugin.saveSettings();
                 }));
 
