@@ -188,10 +188,10 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                     }
                 }
             });
-            // Aktualisiere Tags separat
+            
             await this.invokeAnkiConnect('removeTags', {
                 notes: existingNotes.result,
-                tags: ""  // Entfernt alle bestehenden Tags
+                tags: ""  
             });
             await this.invokeAnkiConnect('addTags', {
                 notes: existingNotes.result,
@@ -237,7 +237,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
         const lines = content.split('\n');
         const cards = [];
         const headings = {};
-        const cardRegex = /- (.*?)::([^-\n]*($|\n)|)/;
+        const cardRegex = /- (.*?)==([^-\n]*($|\n)|)/;
 
         lines.forEach((line, index) => {
             if (line.startsWith('#')) {
