@@ -1,6 +1,6 @@
 # AI-AnkiSync for Obsidian
 
-AI-AnkiSync is an Obsidian plugin that detects flashcards in your notes, enhances the content using a language model, and syncs them with Anki via AnkiConnect. The AI enhancement allows users to input brief keywords, automating the expansion and formatting of flashcards, this speeds up the creation process.
+AI-AnkiSync is an Obsidian plugin that detects flashcards in your notes, enhances the content using a language model, and syncs them with Anki via AnkiConnect. The AI enhancement allows users to input brief keywords, automating the expansion and formatting of flashcards, which speeds up the creation process.
 
 ## Features
 
