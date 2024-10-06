@@ -4,7 +4,7 @@
     "version": "1.0.0",
     "minAppVersion": "0.15.0",
     "description": "Sync ai-enhanced flashcards with Anki via AnkiConnect",
-    "author": "Jannus Goecke",
+    "author": "goev",
     "isDesktopOnly": false,
     "main": "main.js"
   }
