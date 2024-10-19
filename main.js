@@ -237,7 +237,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
         const lines = content.split('\n');
         const cards = [];
         const headings = {};
-        const cardRegex = /- (.*?)==([^-\n]*($|\n)|)/;
+        const cardRegex = /- (.*?)==(.+)?/;
 
         lines.forEach((line, index) => {
             if (line.startsWith('#')) {
@@ -282,7 +282,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
 const DEFAULT_SETTINGS = {
     apiKey: '',
     enableAIEnhancement: true,
-    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise, and more effective for learning but without changing the meaning. Treat the back as a hint on how you are suppossed to enhance the back if it's not a complete answer (e.g., If asks for specific data, provide the actual data). If appropriate use HTML for formatting (e.g., <strong>, <em>, <code>, <ul>, <li>). Always answer in the given language and ensure proper HTML formatting.",
+    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise, and more effective for learning but without changing the meaning. The backside may contain hints for the answer, instructions for creating the answer, or the complete answer. If nothing is provided on the backside, the answer should be generated entirely. If parts of the answer are provided, they should always be used. If appropriate use HTML for formatting (e.g., <strong>, <em>, <code>, <ul>, <li>). Always answer in the given language and ensure proper HTML formatting.",
     defaultDeck: "Default",
     defaultTags: "",
     aiModel: "gpt-4o",
