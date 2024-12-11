@@ -1,17 +1,45 @@
 'use strict';
 
 var obsidian = require('obsidian');
+var { requestUrl } = require('obsidian');
 
 class AnkiSyncPlugin extends obsidian.Plugin {
     async onload() {
-        console.log('Loading AnkiSyncPlugin');
-
         await this.loadSettings();
 
         this.addCommand({
             id: 'scan-and-sync-anki-cards',
-            name: 'Scan and Sync Anki Cards',
-            callback: () => this.scanAndSyncCards()
+            name: 'Scan and sync anki cards',
+            checkCallback: (checking) => {
+                const activeFile = this.app.workspace.getActiveFile();
+                const aiRequirementsMet = !this.settings.enableAIEnhancement || 
+                    (this.settings.enableAIEnhancement && this.settings.apiKey);
+                const deckConfigured = this.settings.defaultDeck || this.settings.automaticDeckAssignment;
+
+                if (!checking && !activeFile) {
+                    new obsidian.Notice('Please open a file first');
+                    return false;
+                }
+
+                if (!checking && !aiRequirementsMet) {
+                    new obsidian.Notice('Please configure OpenAI API key or disable AI enhancement');
+                    return false;
+                }
+
+                if (!checking && !deckConfigured) {
+                    new obsidian.Notice('Please configure deck settings');
+                    return false;
+                }
+
+                if (activeFile instanceof obsidian.TFile && aiRequirementsMet && deckConfigured) {
+                    if (!checking) {
+                        this.scanAndSyncCards();
+                    }
+                    return true;
+                }
+
+                return false;
+            }
         });
 
         this.addSettingTab(new AnkiSyncSettingTab(this.app, this));
@@ -25,18 +53,11 @@ class AnkiSyncPlugin extends obsidian.Plugin {
         await this.saveData(this.settings);
     }
 
-    onunload() {
-        console.log('Unloading AnkiSyncPlugin');
-    }
-
     async scanAndSyncCards() {
-        console.log('Starting scanAndSyncCards');
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile instanceof obsidian.TFile) {
-            console.log('Active file found:', activeFile.path);
             const content = await this.app.vault.read(activeFile);
             const cards = this.parseCardsAndTagsFromContent(content);
-            console.log('Found cards:', cards);
             
             let deckName = this.settings.defaultDeck;
             if (this.settings.automaticDeckAssignment) {
@@ -46,17 +67,22 @@ class AnkiSyncPlugin extends obsidian.Plugin {
             
             let addedCount = 0;
             let updatedCount = 0;
-            for (const card of cards) {
+            const totalCards = cards.length;
+            let progressNotice = new obsidian.Notice(`Processing cards: 0/${totalCards}`, 0);
+
+            for (let i = 0; i < cards.length; i++) {
+                const card = cards[i];
                 try {
-                    console.log('Processing card:', card);
+                    // Update progress notification
+                    progressNotice.hide();
+                    progressNotice = new obsidian.Notice(`Processing cards: ${i + 1}/${totalCards}`, 2000);
+
                     let processedCard = card;
                     if (this.settings.enableAIEnhancement) {
                         try {
                             processedCard = await this.enhanceCardWithAI(card);
-                            console.log('AI-enhanced card:', processedCard);
                         } catch (aiError) {
-                            console.error('Error enhancing card with AI:', aiError);
-                            new obsidian.Notice(`Failed to enhance card with AI. Using original content.`);
+                            new obsidian.Notice(`Failed to enhance card with AI. Using original content.`, 3000);
                         }
                     }
                     
@@ -65,28 +91,26 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                         tags = tags.concat(this.settings.defaultTags.split(',').map(tag => tag.trim()));
                     }
                     
-                    console.log('Attempting to add/update card:', processedCard);
                     const result = await this.addOrUpdateNoteInAnki(processedCard.front, processedCard.back, deckName, tags);
-                    console.log('Add/Update note result:', result);
                     if (result.added) {
                         addedCount++;
                     } else if (result.updated) {
                         updatedCount++;
                     }
                 } catch (error) {
-                    console.error('Error processing card:', error);
-                    new obsidian.Notice(`Failed to process card: ${card.front}. Error: ${error.message}`);
+                    new obsidian.Notice(`Failed to process card: ${card.front}. Error: ${error.message}`, 3000);
                 }
             }
-            new obsidian.Notice(`Sync complete. Added: ${addedCount}, Updated: ${updatedCount} in deck: ${deckName}`);
+
+            // Hide the progress notice and show final result
+            progressNotice.hide();
+            new obsidian.Notice(`Sync complete. Added: ${addedCount}, Updated: ${updatedCount} in deck: ${deckName}`, 4000);
         } else {
-            console.log('No active file');
             new obsidian.Notice('No active file');
         }
     }
 
     async enhanceCardWithAI(card) {
-        console.log('Enhancing card with AI:', card);
         if (!this.settings.apiKey) {
             throw new Error('OpenAI API key is not set');
         }
@@ -95,53 +119,48 @@ class AnkiSyncPlugin extends obsidian.Plugin {
         Front: ${card.front}
         Back: ${card.back}`;
 
-        try {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${this.settings.apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: this.settings.aiModel,
-                    messages: [
-                        {"role": "system", "content": this.settings.aiPrompt},
-                        {"role": "user", "content": userPrompt}
-                    ],
-                    response_format: {
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "enhanced_flashcard",
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "front": { "type": "string" },
-                                    "back": { "type": "string" }
-                                },
-                                "required": ["front", "back"],
-                                "additionalProperties": false
+        const response = await requestUrl({
+            url: 'https://api.openai.com/v1/chat/completions',
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.settings.apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: this.settings.aiModel,
+                messages: [
+                    {"role": "system", "content": this.settings.aiPrompt},
+                    {"role": "user", "content": userPrompt}
+                ],
+                response_format: {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "enhanced_flashcard",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "front": { "type": "string" },
+                                "back": { "type": "string" }
                             },
-                            "strict": true
-                        }
+                            "required": ["front", "back"],
+                            "additionalProperties": false
+                        },
+                        "strict": true
                     }
-                })
-            });
+                }
+            })
+        });
 
-            if (!response.ok) {
-                throw new Error(`OpenAI API request failed: ${response.statusText}`);
-            }
-
-            const data = await response.json();
+        try {
+            const data = JSON.parse(response.text);
             const enhancedContent = JSON.parse(data.choices[0].message.content);
-
             return {
                 ...card,
                 front: enhancedContent.front,
                 back: enhancedContent.back
             };
         } catch (error) {
-            console.error('Error calling OpenAI API:', error);
-            throw error;
+            throw new Error('Failed to parse AI response');
         }
     }
 
@@ -153,13 +172,11 @@ class AnkiSyncPlugin extends obsidian.Plugin {
     async ensureDeckExists(deckName) {
         const deckNames = await this.invokeAnkiConnect('deckNames');
         if (!deckNames.result.includes(deckName)) {
-            console.log(`Creating new deck: ${deckName}`);
             await this.invokeAnkiConnect('createDeck', { deck: deckName });
         }
     }
 
     async addOrUpdateNoteInAnki(front, back, deckName, tags) {
-        console.log('Adding or updating note in Anki:', front, back, 'in deck:', deckName, 'with tags:', tags);
         const note = {
             deckName: deckName,
             modelName: "Basic",
@@ -197,29 +214,22 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                 notes: existingNotes.result,
                 tags: tags.join(' ')
             });
-            console.log('Update result:', updateResult);
             return { updated: true };
         } else {
             const addResult = await this.invokeAnkiConnect('addNote', { note });
-            console.log('Add result:', addResult);
             return { added: true };
         }
     }
 
     async invokeAnkiConnect(action, params = {}) {
-        console.log('Invoking AnkiConnect:', action, params);
         try {
-            const response = await fetch('http://localhost:8765', {
+            const response = await requestUrl({
+                url: 'http://localhost:8765',
                 method: 'POST',
                 body: JSON.stringify({ action, version: 6, params })
             });
     
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-    
-            const responseJson = await response.json();
-            console.log('AnkiConnect raw response:', responseJson);
+            const responseJson = JSON.parse(response.text);
     
             if (responseJson.error) {
                 throw new Error(responseJson.error);
@@ -227,7 +237,6 @@ class AnkiSyncPlugin extends obsidian.Plugin {
     
             return responseJson;
         } catch (error) {
-            console.error('Error invoking AnkiConnect:', error);
             new obsidian.Notice(`Failed to connect to Anki: ${error.message}. Make sure Anki is running and AnkiConnect is installed`);
             throw error;
         }
@@ -258,13 +267,11 @@ class AnkiSyncPlugin extends obsidian.Plugin {
                     if (front) {
                         const tags = this.createHierarchicalTags(headings);
                         cards.push({ front, back, tags });
-                        console.log(`Parsed card - Front: "${front}", Back: "${back}", Tags: ${tags.join(', ')}`);
                     }
                 }
             }
         });
 
-        console.log(`Total parsed cards: ${cards.length}`);
         return cards;
     }
 
@@ -282,7 +289,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
 const DEFAULT_SETTINGS = {
     apiKey: '',
     enableAIEnhancement: true,
-    aiPrompt: "You are an AI assistant that enhances flashcards. Improve the content on front and back by making it clearer, more concise, and more effective for learning but without changing the meaning. The backside may contain hints for the answer, instructions for creating the answer, or the complete answer. If nothing is provided on the backside, the answer should be generated entirely. If parts of the answer are provided, they should always be used. If appropriate use HTML for formatting (e.g., <strong>, <em>, <code>, <ul>, <li>). Always answer in the given language and ensure proper HTML formatting.",
+    aiPrompt: "You are an AI assistant that enhances anki flashcards. Improve the content on front and back by making it clearer, more concise, and more effective for learning but without changing the meaning. The backside may contain hints for the answer, instructions for creating the answer, or the complete answer. If nothing is provided on the backside, the answer should be generated entirely. If parts of the answer are provided, they should always be used. If appropriate use HTML for formatting. Always answer in the given language and ensure proper HTML formatting.",
     defaultDeck: "Default",
     defaultTags: "",
     aiModel: "gpt-4o",
@@ -299,10 +306,9 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
     display() {
         let {containerEl} = this;
         containerEl.empty();
-        containerEl.createEl('h2', {text: 'AnkiSync Settings'});
 
         new obsidian.Setting(containerEl)
-            .setName('OpenAI API Key')
+            .setName('OpenAI API key')
             .setDesc('Enter your OpenAI API key')
             .addText(text => text
                 .setPlaceholder('Enter API key')
@@ -313,7 +319,7 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
                 }));
 
         new obsidian.Setting(containerEl)
-            .setName('Enable AI Enhancement')
+            .setName('Enable AI enhancement')
             .setDesc('Use a language model to enhance your flashcards')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.enableAIEnhancement)
@@ -334,7 +340,7 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
                 }));
 
         new obsidian.Setting(containerEl)
-            .setName('AI Model')
+            .setName('AI model')
             .setDesc('Choose the OpenAI model used for card enhancement')
             .addDropdown(dropdown => dropdown
                 .addOption('gpt-4o', 'GPT-4o')
@@ -346,7 +352,7 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
                 }));
 
         new obsidian.Setting(containerEl)
-            .setName('Deck Assignment')
+            .setName('Deck assignment')
             .setDesc('Automatically assign decks based on file names')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.automaticDeckAssignment)
@@ -356,7 +362,7 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
                 }));
 
         new obsidian.Setting(containerEl)
-            .setName('Default Deck')
+            .setName('Default deck')
             .setDesc('The default deck to add new cards to')
             .addText(text => text
                 .setPlaceholder('Enter default deck name')
@@ -367,7 +373,7 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
                 }));
 
         new obsidian.Setting(containerEl)
-            .setName('Tag Assignment')
+            .setName('Tag assignment')
             .setDesc('Automatically assign tags based on headings')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.automaticTagAssignment)
@@ -377,7 +383,7 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
                 }));
 
         new obsidian.Setting(containerEl)
-            .setName('Default Tags')
+            .setName('Default tags')
             .setDesc('Default tags for new cards (comma-separated)')
             .addText(text => text
                 .setPlaceholder('Enter default tags')
