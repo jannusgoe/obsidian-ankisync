@@ -9,7 +9,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
 
         this.addCommand({
             id: 'scan-and-sync-anki-cards',
-            name: 'Scan and sync anki cards',
+            name: 'Scan and sync Anki cards',
             checkCallback: (checking) => {
                 const activeFile = this.app.workspace.getActiveFile();
                 const aiRequirementsMet = !this.settings.enableAIEnhancement || 
@@ -152,7 +152,7 @@ class AnkiSyncPlugin extends obsidian.Plugin {
         });
 
         try {
-            const data = JSON.parse(response.text);
+            const data = response.json;
             const enhancedContent = JSON.parse(data.choices[0].message.content);
             return {
                 ...card,
