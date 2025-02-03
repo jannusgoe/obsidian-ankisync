@@ -345,6 +345,9 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
             .addDropdown(dropdown => dropdown
                 .addOption('gpt-4o', 'GPT-4o')
                 .addOption('gpt-4o-mini', 'GPT-4o mini')
+                .addOption('o3-mini', 'o3 mini')
+                .addOption('o1', 'o1')
+                .addOption('o1-mini', 'o1 mini')
                 .setValue(this.plugin.settings.aiModel)
                 .onChange(async (value) => {
                     this.plugin.settings.aiModel = value;
