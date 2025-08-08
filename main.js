@@ -343,11 +343,11 @@ class AnkiSyncSettingTab extends obsidian.PluginSettingTab {
             .setName('AI model')
             .setDesc('Choose the OpenAI model used for card enhancement')
             .addDropdown(dropdown => dropdown
+                .addOption('gpt-5', 'GPT-5')
                 .addOption('gpt-4o', 'GPT-4o')
+                .addOption('gpt-4.1-2025-04-14', 'GPT-4.1') 
+                .addOption('gpt-4.5-preview', 'GPT-4.5-preview')
                 .addOption('gpt-4o-mini', 'GPT-4o mini')
-                .addOption('o3-mini', 'o3 mini')
-                .addOption('o1', 'o1')
-                .addOption('o1-mini', 'o1 mini')
                 .setValue(this.plugin.settings.aiModel)
                 .onChange(async (value) => {
                     this.plugin.settings.aiModel = value;
